@@ -8,6 +8,9 @@ from ai_models.utils.image_process import pad_image_to_cube
 class SCRFD:
     __logger = logging.getLogger(__qualname__)
 
+    # output_key = ["out0", "out1", "out2", "out3", "out4", "out5", "out6", "out7", "out8"]
+    output_key = ["score_8", "score_16", "score_32", "bbox_8", "bbox_16", "bbox_32", "kps_8", "kps_16", "kps_32"]
+
     def __init__(self, onnxmodel, confThreshold=0.5, nmsThreshold=0.5):
         self.inpWidth = 640
         self.inpHeight = 640
@@ -128,25 +131,28 @@ class SCRFD:
         self.__logger.debug(f"{scales= }")
 
         # Runs the forward pass to get output of the output layers
-        outs = self.net.forward(self.net.getUnconnectedOutLayersNames())
+        # outs = self.net.forward(self.net.getUnconnectedOutLayersNames())
+        self.__logger.debug(f"{self.net.getUnconnectedOutLayersNames()= }")
+        outs = self.net.forward(self.output_key)
+        # self.__logger.debug(f"{outs.shape= }")
 
         self.__logger.debug(f"{len(outs)= }")
         for i, out in enumerate(outs):
             self.__logger.debug(f"outs[{i}].shape={out.shape}")
             # self.__logger.debug(f"outs[{i}]={out}")
 
-        list_nms_bboxes, list_nms_kpss, list_nms_scores = self.post_process(outs, scales)
+        list_nms_bboxes, list_nms_kpss, list_nms_scores = self.postprocess(outs, scales)
         # list_nms_bboxes.append(nms_bboxes)
         # list_nms_kpss.append(nms_kpss)
         # list_nms_scores.append(nms_scores)
         return list_nms_bboxes, list_nms_kpss, list_nms_scores
 
-    def post_process(self, outs, scales):
+    def postprocess(self, outs, scales):
         list_nms_bboxes = []
         list_nms_kpss = []
         list_nms_scores = []
         # inference output
-        for batch in range(scales.shape[0]):
+        for batch, scale in enumerate(scales):
             scores_list, bboxes_list, kpss_list = [], [], []
             for idx, stride in enumerate(self._feat_stride_fpn):
                 self.__logger.debug(f"{idx= }, {stride= }")
@@ -176,24 +182,12 @@ class SCRFD:
                 kpss_list.append(pos_kpss)
 
             scores = np.vstack(scores_list).ravel()
-            # bboxes = np.vstack(bboxes_list) / det_scale
-            # kpss = np.vstack(kpss_list) / det_scale
             bboxes = np.vstack(bboxes_list)
             kpss = np.vstack(kpss_list)
-            # bboxes[:, 2:4] = bboxes[:, 2:4] - bboxes[:, 0:2]
-            # scale_h, scale_w = srcimg.shape[0] / newh, srcimg.shape[1] / neww
-            # scale_h, scale_w = scale
-            # padh, padw = pad
 
-            # bboxes[:, 0] = (bboxes[:, 0] - padw) * scale_w
-            # bboxes[:, 1] = (bboxes[:, 1] - padh) * scale_h
-            # bboxes[:, 2] = bboxes[:, 2] * scale_w
-            # bboxes[:, 3] = bboxes[:, 3] * scale_h
-            # kpss[:, :, 0] = (kpss[:, :, 0] - padw) * scale_w
-            # kpss[:, :, 1] = (kpss[:, :, 1] - padh) * scale_h
-            bboxes[:, :2] *= scales[batch]
-            bboxes[:, 2:4] *= scales[batch]
-            kpss[:, :, :2] *= scales[batch]
+            bboxes[:, :2] *= scale
+            bboxes[:, 2:4] *= scale
+            kpss[:, :, :2] *= scale
 
             indices = cv2.dnn.NMSBoxes(bboxes.tolist(), scores.tolist(), self.confThreshold, self.nmsThreshold)
             self.__logger.debug(f"{indices= }")
@@ -236,7 +230,7 @@ if __name__ == "__main__":
         "--onnxmodel",
         default="weights/scrfd_500m_kps.onnx",
         type=str,
-        choices=["weights/scrfd_500m_kps.onnx", "weights/scrfd_2.5g_kps.onnx", "weights/scrfd_10g_kps.onnx"],
+        # choices=["weights/scrfd_500m_kps.onnx", "weights/scrfd_2.5g_kps.onnx", "weights/scrfd_10g_kps.onnx"],
         help="onnx model",
     )
     parser.add_argument("--confThreshold", default=0.5, type=float, help="class confidence")
